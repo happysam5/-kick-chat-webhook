@@ -665,7 +665,11 @@ if __name__ == '__main__':
     
     # Auto-start Pusher connection
     print("🔌 Auto-starting Pusher WebSocket connection...")
-    start_pusher_connection()
+    success = start_pusher_connection()
+    if success:
+        print("✅ Pusher auto-start successful")
+    else:
+        print("❌ Pusher auto-start failed")
     
     # Get port from environment (for deployment platforms)
     port = int(os.environ.get('PORT', 5000))
