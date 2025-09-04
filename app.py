@@ -397,18 +397,18 @@ def overlay():
 
         #beef-counter {{
             position: absolute;
-            top: 25px;
-            right: 25px;
+            top: 35px;
+            right: 35px;
             background: rgba(139, 69, 19, 0.9);
             color: #FFE4B5;
-            padding: 10px 15px;
-            border-radius: 8px;
+            padding: 15px 22px;
+            border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             text-align: center;
             border: 2px solid #D2691E;
             backdrop-filter: blur(5px);
             transition: all 0.3s ease-in-out;
-            min-width: 100px;
+            min-width: 150px;
         }}
 
         #beef-counter.triggered {{
@@ -430,9 +430,9 @@ def overlay():
         }}
 
         .beef-emoji {{
-            font-size: 24px;
+            font-size: 36px;
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
             animation: bounce 2s infinite;
         }}
 
@@ -449,20 +449,20 @@ def overlay():
         }}
 
         .beef-title {{
-            font-size: 10px;
+            font-size: 14px;
             font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 1px;
-            margin-bottom: 5px;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            margin-bottom: 8px;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
         }}
 
         .beef-count {{
-            font-size: 24px;
+            font-size: 36px;
             font-weight: 900;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.8);
             color: #FF4500;
-            margin: 5px 0;
+            margin: 8px 0;
         }}
 
         .beef-count.triggered {{
@@ -477,19 +477,19 @@ def overlay():
         }}
 
         .beef-threshold {{
-            font-size: 8px;
+            font-size: 10px;
             opacity: 0.8;
-            margin-top: 3px;
+            margin-top: 4px;
         }}
 
         .price-doubled {{
-            font-size: 10px;
+            font-size: 13px;
             color: #FFFFFF;
             font-weight: bold;
             background: rgba(255, 0, 0, 0.8);
-            padding: 4px 6px;
-            border-radius: 3px;
-            margin-top: 5px;
+            padding: 6px 9px;
+            border-radius: 4px;
+            margin-top: 8px;
             animation: urgentFlash 0.8s infinite;
         }}
 
@@ -500,16 +500,16 @@ def overlay():
 
         .last-updated {{
             position: absolute;
-            bottom: 2px;
-            right: 2px;
-            font-size: 6px;
+            bottom: 3px;
+            right: 3px;
+            font-size: 8px;
             opacity: 0.6;
         }}
 
         .error {{
             color: #FF6B6B;
-            font-size: 8px;
-            margin-top: 5px;
+            font-size: 11px;
+            margin-top: 7px;
         }}
     </style>
 </head>
