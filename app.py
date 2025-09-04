@@ -32,6 +32,7 @@ def on_pusher_message(ws, message):
     try:
         # Parse Pusher message
         data = json.loads(message)
+        print(f"📨 Raw Pusher event: {data.get('event')}")  # Debug logging
         
         # Handle different Pusher event types
         if data.get('event') == 'pusher:connection_established':
@@ -53,14 +54,14 @@ def on_pusher_message(ws, message):
             print(f"✅ Subscribed to channel: {data.get('channel')}")
             connection_status = f"✅ Subscribed to chatrooms.{CHATROOM_ID}.v2"
             
-        elif data.get('event') == 'App\\\\Events\\\\ChatMessageEvent':
+        elif data.get('event') == 'App\\Events\\ChatMessageEvent':
             # This is a chat message!
             print(f"📨 Received chat message event")
             message_data = json.loads(data.get('data', '{}'))
             
             timestamp = datetime.now().strftime("%H:%M:%S")
             
-            # Extract message info
+            # Extract message info using your provided format
             message_content = message_data.get('content', '')
             username = message_data.get('sender', {}).get('username', 'Unknown')
             user_id = message_data.get('sender', {}).get('id', 0)
