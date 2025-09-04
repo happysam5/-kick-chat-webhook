@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>Beef Counter OBS Overlay</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 1920px;
+            height: 1080px;
+            background: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+
+        #beef-counter {
+            position: absolute;
+            top: 50px;
+            right: 50px;
+            background: rgba(139, 69, 19, 0.9);
+            color: #FFE4B5;
+            padding: 20px 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            border: 3px solid #D2691E;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease-in-out;
+            min-width: 200px;
+        }
+
+        #beef-counter.triggered {
+            background: rgba(255, 0, 0, 0.9);
+            border-color: #FF0000;
+            animation: flash 1s infinite;
+            transform: scale(1.1);
+        }
+
+        @keyframes flash {
+            0%, 100% { 
+                background: rgba(255, 0, 0, 0.9);
+                box-shadow: 0 0 30px rgba(255, 0, 0, 0.8);
+            }
+            50% { 
+                background: rgba(139, 69, 19, 0.9);
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            }
+        }
+
+        .beef-emoji {
+            font-size: 48px;
+            display: block;
+            margin-bottom: 10px;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {
+                transform: translateY(0);
+            }
+            40% {
+                transform: translateY(-10px);
+            }
+            60% {
+                transform: translateY(-5px);
+            }
+        }
+
+        .beef-title {
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .beef-count {
+            font-size: 48px;
+            font-weight: 900;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            color: #FF4500;
+            margin: 10px 0;
+        }
+
+        .beef-count.triggered {
+            color: #FFFFFF;
+            animation: pulse 0.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        .beef-threshold {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+
+        .price-doubled {
+            font-size: 16px;
+            color: #FFFFFF;
+            font-weight: bold;
+            background: rgba(255, 0, 0, 0.8);
+            padding: 8px 12px;
+            border-radius: 5px;
+            margin-top: 10px;
+            animation: urgentFlash 0.8s infinite;
+        }
+
+        @keyframes urgentFlash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .last-updated {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            font-size: 10px;
+            opacity: 0.6;
+        }
+
+        .error {
+            color: #FF6B6B;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="beef-counter">
+        <span class="beef-emoji">🥩</span>
+        <div class="beef-title">Beef TTS Counter</div>
+        <div class="beef-count" id="count-display">0</div>
+        <div class="beef-threshold">Threshold: 10 messages</div>
+        <div class="price-doubled" id="price-doubled" style="display: none;">
+            🔥 TTS PRICE DOUBLED! 🔥
+        </div>
+        <div class="last-updated" id="last-updated">—</div>
+        <div class="error" id="error-message" style="display: none;"></div>
+    </div>
+
+    <script>
+        const CONFIG = {
+            // This will be your Railway app URL + /api/beef-status
+            apiUrl: "YOUR_RAILWAY_URL_HERE/api/beef-status",
+            pollMs: 2000    // Check every 2 seconds
+        };
+
+        class BeefCounterOverlay {
+            constructor() {
+                this.currentCount = 0;
+                this.isTriggered = false;
+                
+                this.elements = {
+                    container: document.getElementById('beef-counter'),
+                    countDisplay: document.getElementById('count-display'),
+                    lastUpdated: document.getElementById('last-updated'),
+                    errorMessage: document.getElementById('error-message'),
+                    priceDoubled: document.getElementById('price-doubled')
+                };
+                
+                this.init();
+            }
+            
+            init() {
+                this.fetchBeefCount();
+                setInterval(() => this.fetchBeefCount(), CONFIG.pollMs);
+            }
+
+            fetchBeefCount() {
+                fetch(CONFIG.apiUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        this.updateCounter(data.beef_count);
+                        this.updateLastUpdated();
+                        this.hideError();
+                    })
+                    .catch(error => {
+                        console.error('Failed to fetch beef count:', error);
+                        this.showError('Connection failed');
+                    });
+            }
+
+            updateCounter(newCount) {
+                const wasTriggered = this.isTriggered;
+                this.isTriggered = newCount >= 10;
+                
+                // Update count if changed
+                if (newCount !== this.currentCount) {
+                    this.animateCountChange(newCount);
+                    this.currentCount = newCount;
+                }
+                
+                // Handle threshold trigger
+                if (this.isTriggered && !wasTriggered) {
+                    this.triggerThreshold();
+                } else if (!this.isTriggered && wasTriggered) {
+                    this.clearThreshold();
+                }
+                
+                // Update visual state
+                this.updateVisualState();
+            }
+
+            animateCountChange(newCount) {
+                this.elements.countDisplay.textContent = newCount;
+                this.elements.countDisplay.style.animation = 'none';
+                setTimeout(() => {
+                    this.elements.countDisplay.style.animation = 'pulse 0.5s ease';
+                }, 10);
+            }
+
+            triggerThreshold() {
+                console.log('🔥 Beef threshold triggered!');
+                this.elements.container.classList.add('triggered');
+                this.elements.countDisplay.classList.add('triggered');
+                this.elements.priceDoubled.style.display = 'block';
+            }
+
+            clearThreshold() {
+                console.log('✅ Beef threshold cleared');
+                this.elements.container.classList.remove('triggered');
+                this.elements.countDisplay.classList.remove('triggered');
+                this.elements.priceDoubled.style.display = 'none';
+            }
+
+            updateVisualState() {
+                if (this.isTriggered) {
+                    this.elements.container.classList.add('triggered');
+                    this.elements.countDisplay.classList.add('triggered');
+                    this.elements.priceDoubled.style.display = 'block';
+                } else {
+                    this.elements.container.classList.remove('triggered');
+                    this.elements.countDisplay.classList.remove('triggered');
+                    this.elements.priceDoubled.style.display = 'none';
+                }
+            }
+
+            updateLastUpdated() {
+                const now = new Date();
+                this.elements.lastUpdated.textContent = `Updated: ${now.toLocaleTimeString()}`;
+            }
+
+            showError(message) {
+                this.elements.errorMessage.textContent = message;
+                this.elements.errorMessage.style.display = 'block';
+            }
+
+            hideError() {
+                this.elements.errorMessage.style.display = 'none';
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new BeefCounterOverlay();
+        });
+    </script>
+</body>
+</html>

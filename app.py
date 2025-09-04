@@ -24,9 +24,53 @@ CHATROOM_ID = 328681  # From your message example
 
 # Chat monitoring state (in-memory for simplicity)
 all_chat_messages = []
+beef_count = 0
+pending_beef_messages = {}  # Track users who said "beef" waiting for TTS confirmation
 websocket_client = None
 connection_status = "Disconnected"
 
+def check_beef_tts(message_content, username):
+    """Check for beef detection and TTS confirmation logic"""
+    global beef_count, pending_beef_messages
+    
+    # Step 1: Check if message contains "beef"
+    if 'beef' in message_content.lower():
+        # Store this user as having said "beef" recently
+        pending_beef_messages[username] = {
+            'message': message_content,
+            'timestamp': datetime.now(),
+            'beef_detected': True
+        }
+        print(f"🥩 BEEF DETECTED in message from {username}: {message_content}")
+        print(f"   Waiting for TTS confirmation...")
+        return False
+    
+    # Step 2: Check for TTS confirmation message
+    # Format: "@username Your message has been queued for TTS."
+    if message_content.startswith('@') and 'Your message has been queued for TTS.' in message_content:
+        # Extract the username from the confirmation
+        confirmed_username = message_content.split(' ')[0][1:]  # Remove @ symbol
+        
+        # Check if this user recently said "beef"
+        if confirmed_username in pending_beef_messages:
+            beef_count += 1
+            beef_message = pending_beef_messages[confirmed_username]['message']
+            
+            print(f"🚨 BEEF TTS CONFIRMED!")
+            print(f"   User: {confirmed_username}")
+            print(f"   Message: {beef_message}")
+            print(f"   Beef count now: {beef_count}")
+            
+            # Remove from pending
+            del pending_beef_messages[confirmed_username]
+            
+            # Check if we hit the threshold
+            if beef_count >= 10:
+                print(f"🔥 BEEF THRESHOLD REACHED! Double TTS price!")
+            
+            return True
+    
+    return False
 
 def on_pusher_message(ws, message):
     """Handle incoming Pusher WebSocket messages"""
@@ -84,6 +128,9 @@ def on_pusher_message(ws, message):
                 all_chat_messages.pop(0)
             
             print(f"💬 {username}: {message_content}")
+            
+            # Check for beef TTS logic
+            check_beef_tts(message_content, username)
         
         else:
             # Log other events for debugging
@@ -175,7 +222,8 @@ def dashboard():
                 <strong>Channel:</strong> {CHANNEL_NAME} (Chatroom ID: {CHATROOM_ID})<br>
                 <strong>Pusher Connection:</strong> {connection_status}<br>
                 <strong>Total Messages:</strong> {len(all_chat_messages)}<br>
-                <strong>WebSocket URL:</strong> ws-{PUSHER_CLUSTER}.pusher.com/app/{PUSHER_APP_KEY}<br>
+                <strong>Beef TTS Count:</strong> {beef_count}/10 {"🔥 TRIGGERED!" if beef_count >= 10 else ""}<br>
+                <strong>Pending Beef:</strong> {len(pending_beef_messages)} users<br>
                 <strong>Status:</strong> {"🟢 Online" if request.url_root else "🔴 Offline"}
             </div>
             
@@ -190,9 +238,10 @@ def dashboard():
                 <div id="setup-status" style="margin-top: 10px; padding: 10px; border-radius: 3px; background: #333; display: none;"></div>
             </div>
             
-            <div class="count">{len(all_chat_messages)}</div>
+            <div class="count" style="color: {'#FF0000' if beef_count >= 10 else '#FF4500'}; {'animation: pulse 1s infinite;' if beef_count >= 10 else ''}">{beef_count}</div>
             <div style="text-align: center; margin-bottom: 20px;">
-                <strong>Total Chat Messages (Last 30)</strong>
+                <strong>🥩 Beef TTS Messages (Threshold: 10)</strong>
+                {f'<div style="color: #FF0000; font-weight: bold; margin-top: 10px;">🔥 TTS PRICE DOUBLED! 🔥</div>' if beef_count >= 10 else ''}
             </div>
             
             <div class="log">
@@ -202,17 +251,23 @@ def dashboard():
             
             <div style="text-align: center; margin-top: 20px;">
                 <button onclick="fetch('/clear-messages', {{method: 'POST'}}).then(() => location.reload())" 
-                        style="background: #dc3545; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                        style="background: #6c757d; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; margin: 5px;">
                     🗑️ Clear Messages
+                </button>
+                <button onclick="fetch('/reset-beef', {{method: 'POST'}}).then(() => location.reload())" 
+                        style="background: #dc3545; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; margin: 5px;">
+                    🔄 Reset Beef Counter
                 </button>
             </div>
             
             <div class="status" style="margin-top: 20px; font-size: 12px;">
-                <strong>🚀 Instructions:</strong><br>
+                <strong>🥩 Beef TTS Counter Instructions:</strong><br>
                 1. Click "🔌 Connect to Chat" to start monitoring<br>
-                2. Go to kick.com/sam and type messages<br>
-                3. All chat messages will appear here in real-time!<br>
-                4. Only keeps the last 30 messages (automatically clears oldest)
+                2. System detects messages containing "beef"<br>
+                3. Waits for TTS confirmation: "@username Your message has been queued for TTS."<br>
+                4. When confirmed, increments beef counter<br>
+                5. At 10 beef messages → TTS price doubles + red flashing overlay<br>
+                6. Add "beef-counter-overlay.html" to OBS as browser source
             </div>
         </div>
         
@@ -286,6 +341,19 @@ def disconnect_pusher_route():
             'error': str(e)
         })
 
+@app.route('/api/beef-status')
+def beef_status():
+    """API endpoint for OBS overlay to get beef counter status"""
+    global beef_count, pending_beef_messages
+    return jsonify({
+        'beef_count': beef_count,
+        'is_triggered': beef_count >= 10,
+        'pending_beef': len(pending_beef_messages),
+        'threshold': 10,
+        'price_doubled': beef_count >= 10,
+        'timestamp': datetime.now().isoformat()
+    })
+
 @app.route('/clear-messages', methods=['POST'])
 def clear_messages():
     """Clear all chat messages"""
@@ -293,6 +361,15 @@ def clear_messages():
     all_chat_messages = []
     print("🗑️ Chat messages cleared")
     return jsonify({'status': 'cleared', 'message_count': len(all_chat_messages)})
+
+@app.route('/reset-beef', methods=['POST'])
+def reset_beef():
+    """Reset beef counter"""
+    global beef_count, pending_beef_messages
+    beef_count = 0
+    pending_beef_messages = {}
+    print("🔄 Beef counter reset")
+    return jsonify({'status': 'reset', 'beef_count': beef_count})
 
 @app.route('/health')
 def health():
