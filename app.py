@@ -208,6 +208,13 @@ def dashboard():
                 setTimeout(() => {{ statusDiv.style.display = 'none'; }}, 5000);
             }}
             
+            function scrollToBottom() {{
+                const chatMessages = document.getElementById('chat-messages');
+                if (chatMessages) {{
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }}
+            }}
+            
             function connectPusher() {{
                 showStatus('Connecting to Pusher WebSocket...', true);
                 fetch('/connect-pusher', {{method: 'POST'}})
@@ -233,6 +240,21 @@ def dashboard():
                     }})
                     .catch(err => showStatus('❌ Error: ' + err.message, false));
             }}
+            
+            // Auto-scroll to bottom when page loads and refreshes
+            window.addEventListener('load', function() {{
+                scrollToBottom();
+                
+                // Auto-scroll every time the page refreshes
+                const observer = new MutationObserver(function() {{
+                    scrollToBottom();
+                }});
+                
+                const chatMessages = document.getElementById('chat-messages');
+                if (chatMessages) {{
+                    observer.observe(chatMessages, {{ childList: true, subtree: true }});
+                }}
+            }});
         </script>
     </body>
     </html>
