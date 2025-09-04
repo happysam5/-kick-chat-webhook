@@ -55,6 +55,7 @@ def on_pusher_message(ws, message):
             
         elif data.get('event') == 'App\\\\Events\\\\ChatMessageEvent':
             # This is a chat message!
+            print(f"📨 Received chat message event")
             message_data = json.loads(data.get('data', '{}'))
             
             timestamp = datetime.now().strftime("%H:%M:%S")
@@ -75,10 +76,6 @@ def on_pusher_message(ws, message):
             }
             
             all_chat_messages.append(chat_entry)
-            
-            # Keep only last 30 messages
-            if len(all_chat_messages) > 30:
-                all_chat_messages.pop(0)
             
             print(f"💬 {username}: {message_content}")
         
@@ -160,6 +157,9 @@ def dashboard():
             .status {{ background: #333; padding: 15px; border-radius: 8px; margin: 10px 0; }}
             .log {{ background: #222; padding: 10px; border-radius: 5px; max-height: 600px; overflow-y: auto; margin: 10px 0; }}
             .message {{ background: #4a2c17; margin: 5px 0; padding: 8px; border-radius: 3px; border-left: 3px solid #D2691E; }}
+            #chat-messages {{ max-height: 550px; overflow-y: auto; }}
+            .message:last-child {{ animation: fadeIn 0.3s ease; }}
+            @keyframes fadeIn {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
         </style>
     </head>
     <body>
@@ -184,8 +184,10 @@ def dashboard():
             </div>
             
             <div class="log">
-                <h3>💬 Real-Time Chat Messages ({len(all_chat_messages)}/30):</h3>
-                {''.join([f'<div class="message"><strong>{entry.get("timestamp", "")}</strong> - <span style="color: #00aa00;">{entry.get("username", "")}</span>: {entry.get("message", "")}</div>' for entry in all_chat_messages]) if all_chat_messages else '<p>❌ No messages received yet</p>'}
+                <h3>💬 Real-Time Chat Messages ({len(all_chat_messages)} total):</h3>
+                <div id="chat-messages">
+                    {''.join([f'<div class="message"><strong>{entry.get("timestamp", "")}</strong> - <span style="color: #00aa00;">{entry.get("username", "")}</span>: {entry.get("message", "")}</div>' for entry in all_chat_messages[-100:]]) if all_chat_messages else '<p>❌ No messages received yet</p>'}
+                </div>
             </div>
             
             <div style="text-align: center; margin-top: 20px;">
@@ -289,7 +291,7 @@ if __name__ == '__main__':
     print(f"Channel: {CHANNEL_NAME} (Chatroom ID: {CHATROOM_ID})")
     print(f"Pusher App Key: {PUSHER_APP_KEY}")
     print(f"WebSocket URL: {PUSHER_WS_URL}")
-    print("📊 Tracking all chat messages (max 30)")
+    print("📊 Tracking all chat messages (unlimited)")
     
     # Auto-start Pusher connection
     print("🔌 Auto-starting Pusher WebSocket connection...")
