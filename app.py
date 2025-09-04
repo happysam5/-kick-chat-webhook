@@ -549,11 +549,13 @@ def set_beef_count():
         data = request.get_json()
         new_count = int(data.get('count', 0))
         beef_count = max(0, new_count)  # Don't allow negative counts
-        pending_beef_messages = {}  # Clear pending messages when manually setting
-        if beef_count > 0:
-            last_beef_tts_time = datetime.now()  # Reset timer when manually setting count
-        else:
+        # Don't clear pending messages - let them continue to be tracked
+        # Only reset timer if we're setting to 0
+        if beef_count == 0:
             last_beef_tts_time = None
+        # If setting to a value > 0 and we don't have a timer, start one
+        elif beef_count > 0 and not last_beef_tts_time:
+            last_beef_tts_time = datetime.now()
         print(f"🔄 Beef counter set to {beef_count}")
         return jsonify({'status': 'set', 'beef_count': beef_count})
     except (ValueError, TypeError):
