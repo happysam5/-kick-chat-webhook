@@ -688,6 +688,13 @@ def overlay():
             opacity: 0.6;
         }}
 
+        .cooldown-timer {{
+            font-size: 9px;
+            color: #FFA500;
+            margin-top: 4px;
+            opacity: 0.9;
+        }}
+
         .error {{
             color: #FF6B6B;
             font-size: 11px;
@@ -701,6 +708,9 @@ def overlay():
         <div class="beef-title">Beef TTS Counter</div>
         <div class="beef-count" id="count-display">0</div>
         <div class="beef-threshold">Threshold: 10 messages</div>
+        <div class="cooldown-timer" id="cooldown-timer" style="display: none;">
+            Reset in: <span id="timer-display">0:00</span>
+        </div>
         <div class="price-doubled" id="price-doubled" style="display: none;">
             🔥 TTS PRICE DOUBLED! 🔥
         </div>
@@ -725,7 +735,9 @@ def overlay():
                     countDisplay: document.getElementById('count-display'),
                     lastUpdated: document.getElementById('last-updated'),
                     errorMessage: document.getElementById('error-message'),
-                    priceDoubled: document.getElementById('price-doubled')
+                    priceDoubled: document.getElementById('price-doubled'),
+                    cooldownTimer: document.getElementById('cooldown-timer'),
+                    timerDisplay: document.getElementById('timer-display')
                 }};
                 
                 this.init();
@@ -741,6 +753,7 @@ def overlay():
                     .then(response => response.json())
                     .then(data => {{
                         this.updateCounter(data.beef_count);
+                        this.updateCooldownTimer(data.time_until_reset);
                         this.updateLastUpdated();
                         this.hideError();
                     }})
@@ -813,6 +826,17 @@ def overlay():
             showError(message) {{
                 this.elements.errorMessage.textContent = message;
                 this.elements.errorMessage.style.display = 'block';
+            }}
+
+            updateCooldownTimer(timeUntilReset) {{
+                if (timeUntilReset && timeUntilReset > 0 && this.currentCount > 0) {{
+                    const minutes = Math.floor(timeUntilReset / 60);
+                    const seconds = timeUntilReset % 60;
+                    this.elements.timerDisplay.textContent = `${{minutes}}:${{seconds.toString().padStart(2, '0')}}`;
+                    this.elements.cooldownTimer.style.display = 'block';
+                }} else {{
+                    this.elements.cooldownTimer.style.display = 'none';
+                }}
             }}
 
             hideError() {{
