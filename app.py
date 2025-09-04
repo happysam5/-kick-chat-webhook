@@ -397,18 +397,18 @@ def overlay():
 
         #beef-counter {{
             position: absolute;
-            top: 50px;
-            right: 50px;
+            top: 25px;
+            right: 25px;
             background: rgba(139, 69, 19, 0.9);
             color: #FFE4B5;
-            padding: 20px 30px;
-            border-radius: 15px;
+            padding: 10px 15px;
+            border-radius: 8px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             text-align: center;
-            border: 3px solid #D2691E;
+            border: 2px solid #D2691E;
             backdrop-filter: blur(5px);
             transition: all 0.3s ease-in-out;
-            min-width: 200px;
+            min-width: 100px;
         }}
 
         #beef-counter.triggered {{
@@ -430,9 +430,9 @@ def overlay():
         }}
 
         .beef-emoji {{
-            font-size: 48px;
+            font-size: 24px;
             display: block;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
             animation: bounce 2s infinite;
         }}
 
@@ -449,20 +449,20 @@ def overlay():
         }}
 
         .beef-title {{
-            font-size: 18px;
+            font-size: 10px;
             font-weight: bold;
             text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
         }}
 
         .beef-count {{
-            font-size: 48px;
+            font-size: 24px;
             font-weight: 900;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
             color: #FF4500;
-            margin: 10px 0;
+            margin: 5px 0;
         }}
 
         .beef-count.triggered {{
@@ -477,19 +477,19 @@ def overlay():
         }}
 
         .beef-threshold {{
-            font-size: 12px;
+            font-size: 8px;
             opacity: 0.8;
-            margin-top: 5px;
+            margin-top: 3px;
         }}
 
         .price-doubled {{
-            font-size: 16px;
+            font-size: 10px;
             color: #FFFFFF;
             font-weight: bold;
             background: rgba(255, 0, 0, 0.8);
-            padding: 8px 12px;
-            border-radius: 5px;
-            margin-top: 10px;
+            padding: 4px 6px;
+            border-radius: 3px;
+            margin-top: 5px;
             animation: urgentFlash 0.8s infinite;
         }}
 
@@ -500,16 +500,16 @@ def overlay():
 
         .last-updated {{
             position: absolute;
-            bottom: 5px;
-            right: 5px;
-            font-size: 10px;
+            bottom: 2px;
+            right: 2px;
+            font-size: 6px;
             opacity: 0.6;
         }}
 
         .error {{
             color: #FF6B6B;
-            font-size: 14px;
-            margin-top: 10px;
+            font-size: 8px;
+            margin-top: 5px;
         }}
     </style>
 </head>
@@ -662,6 +662,10 @@ if __name__ == '__main__':
     print(f"Pusher App Key: {PUSHER_APP_KEY}")
     print(f"WebSocket URL: {PUSHER_WS_URL}")
     print("📊 Tracking all chat messages (max 30)")
+    
+    # Auto-start Pusher connection
+    print("🔌 Auto-starting Pusher WebSocket connection...")
+    start_pusher_connection()
     
     # Get port from environment (for deployment platforms)
     port = int(os.environ.get('PORT', 5000))
