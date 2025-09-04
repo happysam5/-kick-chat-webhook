@@ -23,30 +23,10 @@ CHANNEL_NAME = "sam"
 CHATROOM_ID = 328681  # From your message example
 
 # Chat monitoring state (in-memory for simplicity)
-beef_count = 0
 all_chat_messages = []
 websocket_client = None
 connection_status = "Disconnected"
 
-def check_beef_message(message_content, username):
-    """Check if message contains $beef and update counter"""
-    global beef_count
-    
-    message_lower = message_content.lower().strip()
-    
-    if message_lower.startswith('$') and 'beef' in message_lower:
-        beef_count += 1
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        print(f"🥩 BEEF DETECTED! #{beef_count}")
-        print(f"   User: {username}")
-        print(f"   Message: {message_content}")
-        print(f"   Time: {timestamp}")
-        
-        return True
-    
-    return False
 
 def on_pusher_message(ws, message):
     """Handle incoming Pusher WebSocket messages"""
@@ -93,23 +73,17 @@ def on_pusher_message(ws, message):
                 'timestamp': timestamp,
                 'username': username,
                 'message': message_content,
-                'channel': CHANNEL_NAME,
-                'event_type': 'pusher_chat',
                 'message_id': message_id,
                 'user_id': user_id
             }
             
             all_chat_messages.append(chat_entry)
             
-            # Keep only last 100 messages
-            if len(all_chat_messages) > 100:
+            # Keep only last 30 messages
+            if len(all_chat_messages) > 30:
                 all_chat_messages.pop(0)
             
             print(f"💬 {username}: {message_content}")
-            
-            # Check for beef
-            if check_beef_message(message_content, username):
-                print(f"🥩 Beef count now: {beef_count}")
         
         else:
             # Log other events for debugging
@@ -216,20 +190,20 @@ def dashboard():
                 <div id="setup-status" style="margin-top: 10px; padding: 10px; border-radius: 3px; background: #333; display: none;"></div>
             </div>
             
-            <div class="count">{beef_count}</div>
+            <div class="count">{len(all_chat_messages)}</div>
             <div style="text-align: center; margin-bottom: 20px;">
-                <strong>Total $beef Messages Detected</strong>
+                <strong>Total Chat Messages (Last 30)</strong>
             </div>
             
             <div class="log">
-                <h3>📨 Recent Messages ({len(all_chat_messages)} total):</h3>
-                {''.join([f'<div class="message {'beef' if '$' in entry.get("message", "") and 'beef' in entry.get("message", "").lower() else ''}"><strong>{entry.get("timestamp", "")}</strong> - <span style="color: #00aa00;">{entry.get("username", "")}</span> [{entry.get("channel", "")}]: {entry.get("message", "")[:200]} <em>({entry.get("event_type", "")})</em></div>' for entry in all_chat_messages[-20:]]) if all_chat_messages else '<p>❌ No webhooks received yet</p>'}
+                <h3>💬 Chat Messages ({len(all_chat_messages)}/30):</h3>
+                {''.join([f'<div class="message"><strong>{entry.get("timestamp", "")}</strong> - <span style="color: #00aa00;">{entry.get("username", "")}</span>: {entry.get("message", "")}</div>' for entry in all_chat_messages]) if all_chat_messages else '<p>❌ No messages received yet</p>'}
             </div>
             
             <div style="text-align: center; margin-top: 20px;">
-                <button onclick="fetch('/reset', {{method: 'POST'}}).then(() => location.reload())" 
+                <button onclick="fetch('/clear-messages', {{method: 'POST'}}).then(() => location.reload())" 
                         style="background: #dc3545; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-                    🔄 Reset Count
+                    🗑️ Clear Messages
                 </button>
             </div>
             
@@ -237,8 +211,8 @@ def dashboard():
                 <strong>🚀 Instructions:</strong><br>
                 1. Click "🔌 Connect to Chat" to start monitoring<br>
                 2. Go to kick.com/sam and type messages<br>
-                3. Messages will appear here in real-time!<br>
-                4. Type messages starting with "$" containing "beef" to test detection
+                3. All chat messages will appear here in real-time!<br>
+                4. Only keeps the last 30 messages (automatically clears oldest)
             </div>
         </div>
         
@@ -312,14 +286,13 @@ def disconnect_pusher_route():
             'error': str(e)
         })
 
-@app.route('/reset', methods=['POST'])
-def reset_count():
-    """Reset beef counter"""
-    global beef_count, all_chat_messages
-    beef_count = 0
+@app.route('/clear-messages', methods=['POST'])
+def clear_messages():
+    """Clear all chat messages"""
+    global all_chat_messages
     all_chat_messages = []
-    print("🔄 Counter reset")
-    return jsonify({'status': 'reset', 'beef_count': beef_count})
+    print("🗑️ Chat messages cleared")
+    return jsonify({'status': 'cleared', 'message_count': len(all_chat_messages)})
 
 @app.route('/health')
 def health():
@@ -327,15 +300,16 @@ def health():
     return jsonify({
         'status': 'healthy',
         'messages_received': len(all_chat_messages),
-        'beef_count': beef_count,
+        'connection_status': connection_status,
         'channel': CHANNEL_NAME
     })
 
 if __name__ == '__main__':
-    print("🥩 Starting Kick Chat Monitor...")
+    print("💬 Starting Kick Chat Monitor...")
     print(f"Channel: {CHANNEL_NAME} (Chatroom ID: {CHATROOM_ID})")
     print(f"Pusher App Key: {PUSHER_APP_KEY}")
     print(f"WebSocket URL: {PUSHER_WS_URL}")
+    print("📊 Tracking all chat messages (max 30)")
     
     # Get port from environment (for deployment platforms)
     port = int(os.environ.get('PORT', 5000))
