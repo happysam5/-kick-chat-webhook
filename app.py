@@ -28,13 +28,103 @@ beef_count = 0
 pending_beef_messages = {}  # Track users who said "beef" waiting for TTS confirmation
 websocket_client = None
 connection_status = "Disconnected"
+last_beef_tts_time = None  # Track when the last beef TTS was confirmed
+
+def detect_beef_variations(text):
+    """Advanced beef detection to catch various cheating attempts"""
+    import re
+    
+    # Normalize the text
+    normalized = text.lower().strip()
+    
+    # Remove common punctuation and symbols that might be added
+    cleaned = re.sub(r'[^\w\s]', '', normalized)
+    
+    # Check for various beef patterns
+    patterns = [
+        # Basic beef with extra letters
+        r'b+e{2,}f+',
+        
+        # Leetspeak variations
+        r'[b6d]+[e3€ë]{2,}[fƒ]+',
+        
+        # With spaces or separators (remove them first)
+        r'b[\s\-_]*e[\s\-_]*e[\s\-_]*f',
+        
+        # Character insertions (beef with extra chars in middle)
+        r'be+[aeiou]*e+f+',
+        
+        # Backwards
+        r'f+e+e+b+',
+        
+        # With surrounding characters but core intact
+        r'\w*b+e{2,}f+\w*'
+    ]
+    
+    # Test against each pattern
+    for pattern in patterns:
+        if re.search(pattern, cleaned):
+            return True
+    
+    # Additional checks for more complex variations
+    # Remove all spaces and special characters for tighter matching
+    super_cleaned = re.sub(r'[^a-z0-9]', '', normalized)
+    
+    # Check for beef hidden in the cleaned text
+    if re.search(r'b+e{2,}f+', super_cleaned):
+        return True
+    
+    # Check for number substitutions (b33f, be3f, etc.)
+    number_pattern = re.sub('3', 'e', super_cleaned)  # Replace 3 with e
+    number_pattern = re.sub('6', 'b', number_pattern)  # Replace 6 with b
+    if re.search(r'b+e{2,}f+', number_pattern):
+        return True
+    
+    # Check for common word camouflaging attempts
+    sneaky_patterns = [
+        # beef hidden in words like "belief", "beefy", "beefer"  
+        r'be+[a-z]*e+f',
+        
+        # ROT13 simple shift (beef -> orrs)
+        r'o+r+r+s+',
+        
+        # Using similar sounding words or phonetics
+        r'b[ie]+f+',  # bif, bief
+        r'b[ea]+[ea]+[fv]+',  # beav, beaf, etc.
+    ]
+    
+    for pattern in sneaky_patterns:
+        if re.search(pattern, super_cleaned):
+            return True
+    
+    # Final check: look for the core letters b-e-e-f in sequence anywhere in the text
+    # even with other characters mixed in between (more permissive)
+    core_letters = re.findall(r'[b6d].*?[e3€].*?[e3€].*?[fƒ]', super_cleaned)
+    if core_letters:
+        return True
+        
+    return False
+
+def check_cooldown_reset():
+    """Check if 10 minutes have passed since last beef TTS and reset counter if needed"""
+    global beef_count, last_beef_tts_time
+    
+    if last_beef_tts_time and beef_count > 0:
+        time_since_last = datetime.now() - last_beef_tts_time
+        if time_since_last.total_seconds() >= 600:  # 10 minutes = 600 seconds
+            print(f"🕐 10-minute cooldown reached. Resetting beef counter from {beef_count} to 0")
+            beef_count = 0
+            last_beef_tts_time = None
 
 def check_beef_tts(message_content, username):
     """Check for beef detection and TTS confirmation logic"""
-    global beef_count, pending_beef_messages
+    global beef_count, pending_beef_messages, last_beef_tts_time
     
-    # Step 1: Check if message contains "beef"
-    if 'beef' in message_content.lower():
+    # Check cooldown reset before processing new messages
+    check_cooldown_reset()
+    
+    # Step 1: Check if message contains "beef" or variations using advanced detection
+    if detect_beef_variations(message_content):
         # Store this user as having said "beef" recently
         pending_beef_messages[username] = {
             'message': message_content,
@@ -55,11 +145,13 @@ def check_beef_tts(message_content, username):
         if confirmed_username in pending_beef_messages:
             beef_count += 1
             beef_message = pending_beef_messages[confirmed_username]['message']
+            last_beef_tts_time = datetime.now()  # Update the timestamp
             
             print(f"🚨 BEEF TTS CONFIRMED!")
             print(f"   User: {confirmed_username}")
             print(f"   Message: {beef_message}")
             print(f"   Beef count now: {beef_count}")
+            print(f"   Last beef TTS time: {last_beef_tts_time.strftime('%H:%M:%S')}")
             
             # Remove from pending
             del pending_beef_messages[confirmed_username]
@@ -224,6 +316,8 @@ def dashboard():
                 <strong>Total Messages:</strong> {len(all_chat_messages)}<br>
                 <strong>Beef TTS Count:</strong> {beef_count}/10 {"🔥 TRIGGERED!" if beef_count >= 10 else ""}<br>
                 <strong>Pending Beef:</strong> {len(pending_beef_messages)} users<br>
+                <strong>Last Beef TTS:</strong> {last_beef_tts_time.strftime("%H:%M:%S") if last_beef_tts_time else "Never"}<br>
+                <strong>Auto-Reset:</strong> {f"In {int((600 - (datetime.now() - last_beef_tts_time).total_seconds()) / 60)}:{int((600 - (datetime.now() - last_beef_tts_time).total_seconds()) % 60):02d}" if last_beef_tts_time and beef_count > 0 and (datetime.now() - last_beef_tts_time).total_seconds() < 600 else "N/A"}<br>
                 <strong>Status:</strong> {"🟢 Online" if request.url_root else "🔴 Offline"}
             </div>
             
@@ -260,14 +354,35 @@ def dashboard():
                 </button>
             </div>
             
+            <div style="text-align: center; margin-top: 15px; background: #333; padding: 15px; border-radius: 8px;">
+                <h3>🔢 Set Beef Counter</h3>
+                <input type="number" id="beef-count-input" min="0" max="999" value="{beef_count}" 
+                       style="padding: 8px; margin: 10px; border: none; border-radius: 3px; width: 80px; text-align: center;">
+                <button onclick="setBeefCount()" 
+                        style="background: #ffc107; color: #000; border: none; padding: 8px 15px; border-radius: 3px; cursor: pointer; margin: 5px; font-weight: bold;">
+                    📝 Set Count
+                </button>
+                <div id="set-count-status" style="margin-top: 10px; padding: 10px; border-radius: 3px; display: none;"></div>
+            </div>
+            
             <div class="status" style="margin-top: 20px; font-size: 12px;">
                 <strong>🥩 Beef TTS Counter Instructions:</strong><br>
                 1. Click "🔌 Connect to Chat" to start monitoring<br>
-                2. System detects messages containing "beef"<br>
+                2. System detects "beef" variations including:<br>
+                   &nbsp;&nbsp;• Extra letters: beeef, beeff, beeeff<br>
+                   &nbsp;&nbsp;• Symbols: beef!, beef?, beef*<br>
+                   &nbsp;&nbsp;• Leetspeak: b33f, 6eef, be3f<br>
+                   &nbsp;&nbsp;• Spacing: b e e f, b-e-e-f<br>
+                   &nbsp;&nbsp;• Character insertions: beeof, beaef<br>
+                   &nbsp;&nbsp;• Backwards: feeb<br>
+                   &nbsp;&nbsp;• Hidden in words: belief, beefy<br>
+                   &nbsp;&nbsp;• Advanced obfuscation attempts<br>
                 3. Waits for TTS confirmation: "@username Your message has been queued for TTS."<br>
                 4. When confirmed, increments beef counter<br>
                 5. At 10 beef messages → TTS price doubles + red flashing overlay<br>
-                6. Add this URL to OBS as browser source: <strong>{request.host_url}overlay</strong>
+                6. Counter auto-resets to 0 after 10 minutes of no beef TTS<br>
+                7. Use "Set Beef Counter" to start counting from any number<br>
+                8. Add this URL to OBS as browser source: <strong>{request.host_url}overlay</strong>
             </div>
         </div>
         
@@ -304,6 +419,41 @@ def dashboard():
                         setTimeout(() => location.reload(), 1000);
                     }})
                     .catch(err => showStatus('❌ Error: ' + err.message, false));
+            }}
+            
+            function setBeefCount() {{
+                const input = document.getElementById('beef-count-input');
+                const value = parseInt(input.value);
+                
+                if (isNaN(value) || value < 0) {{
+                    showCountStatus('❌ Please enter a valid number (0 or higher)', false);
+                    return;
+                }}
+                
+                showCountStatus('Setting beef count...', true);
+                fetch('/set-beef-count', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{count: value}})
+                }})
+                .then(response => response.json())
+                .then(data => {{
+                    if (data.status === 'set') {{
+                        showCountStatus(`✅ Beef count set to ${{data.beef_count}}`, true);
+                        setTimeout(() => location.reload(), 1500);
+                    }} else {{
+                        showCountStatus('❌ Failed to set count: ' + data.message, false);
+                    }}
+                }})
+                .catch(err => showCountStatus('❌ Error: ' + err.message, false));
+            }}
+            
+            function showCountStatus(message, success) {{
+                const statusDiv = document.getElementById('set-count-status');
+                statusDiv.style.display = 'block';
+                statusDiv.style.background = success ? '#2a4a17' : '#4a1717';
+                statusDiv.textContent = message;
+                setTimeout(() => {{ statusDiv.style.display = 'none'; }}, 5000);
             }}
         </script>
     </body>
@@ -344,14 +494,27 @@ def disconnect_pusher_route():
 @app.route('/api/beef-status')
 def beef_status():
     """API endpoint for OBS overlay to get beef counter status"""
-    global beef_count, pending_beef_messages
+    global beef_count, pending_beef_messages, last_beef_tts_time
+    
+    # Check cooldown reset before returning status
+    check_cooldown_reset()
+    
+    # Calculate time remaining until reset (if applicable)
+    time_until_reset = None
+    if last_beef_tts_time and beef_count > 0:
+        time_since_last = datetime.now() - last_beef_tts_time
+        remaining_seconds = 600 - time_since_last.total_seconds()  # 10 minutes = 600 seconds
+        time_until_reset = max(0, remaining_seconds)
+    
     return jsonify({
         'beef_count': beef_count,
         'is_triggered': beef_count >= 10,
         'pending_beef': len(pending_beef_messages),
         'threshold': 10,
         'price_doubled': beef_count >= 10,
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'last_beef_time': last_beef_tts_time.isoformat() if last_beef_tts_time else None,
+        'time_until_reset': int(time_until_reset) if time_until_reset else None
     })
 
 @app.route('/clear-messages', methods=['POST'])
@@ -365,11 +528,30 @@ def clear_messages():
 @app.route('/reset-beef', methods=['POST'])
 def reset_beef():
     """Reset beef counter"""
-    global beef_count, pending_beef_messages
+    global beef_count, pending_beef_messages, last_beef_tts_time
     beef_count = 0
     pending_beef_messages = {}
+    last_beef_tts_time = None
     print("🔄 Beef counter reset")
     return jsonify({'status': 'reset', 'beef_count': beef_count})
+
+@app.route('/set-beef-count', methods=['POST'])
+def set_beef_count():
+    """Set beef counter to specific value"""
+    global beef_count, pending_beef_messages, last_beef_tts_time
+    try:
+        data = request.get_json()
+        new_count = int(data.get('count', 0))
+        beef_count = max(0, new_count)  # Don't allow negative counts
+        pending_beef_messages = {}  # Clear pending messages when manually setting
+        if beef_count > 0:
+            last_beef_tts_time = datetime.now()  # Reset timer when manually setting count
+        else:
+            last_beef_tts_time = None
+        print(f"🔄 Beef counter set to {beef_count}")
+        return jsonify({'status': 'set', 'beef_count': beef_count})
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Invalid count value'}), 400
 
 @app.route('/overlay')
 def overlay():
