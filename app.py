@@ -1,270 +1,32 @@
 #!/usr/bin/env python3
 """
-Kick Chat Webhook Server - Production Version
-Deployable to Railway, Render, Heroku, etc.
+Kick Chat Monitor - Pusher WebSocket Version
+Monitors Kick.com chat via Pusher WebSocket connection
 """
 
 import json
-import hmac
-import hashlib
 import os
+import asyncio
+import threading
 from datetime import datetime
 from flask import Flask, request, jsonify
-import secrets
-import requests
-import base64
+import websocket
+import time
 
 app = Flask(__name__)
 
-# Configuration from environment variables (for security)
-CLIENT_ID = os.environ.get('KICK_CLIENT_ID', '01K49YM1DQK8CMAF1MNRQ6Z781')
-CLIENT_SECRET = os.environ.get('KICK_CLIENT_SECRET', '7b67c1efe2608c5050dbbe8ab8267444bbf6ac871ab4ebafe7cdbd78a6b4188f')
-WEBHOOK_SECRET = os.environ.get('KICK_WEBHOOK_SECRET', '285010f69a3dedf7337e584f01a9045e496fe122d9c19e74710c8c0870253882')
+# Pusher Configuration
+PUSHER_APP_KEY = "32cbd69e4b950bf97679"
+PUSHER_CLUSTER = "us2"
+PUSHER_WS_URL = f"wss://ws-{PUSHER_CLUSTER}.pusher.com/app/{PUSHER_APP_KEY}?protocol=7&client=js&version=8.4.0&flash=false"
 CHANNEL_NAME = "sam"
-
-# API endpoints
-KICK_API_BASE = "https://api.kick.com"
-OAUTH_TOKEN_URL = "https://api.kick.com/oauth/token"
+CHATROOM_ID = 328681  # From your message example
 
 # Chat monitoring state (in-memory for simplicity)
 beef_count = 0
 all_chat_messages = []
-access_token = None
-subscription_status = "Not subscribed"
-
-def get_oauth_token():
-    """Get OAuth token for API calls"""
-    global access_token
-    
-    try:
-        print("🔐 Getting OAuth token...")
-        
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json'
-        }
-        
-        data = {
-            'grant_type': 'client_credentials',
-            'client_id': CLIENT_ID,
-            'client_secret': CLIENT_SECRET
-        }
-        
-        response = requests.post(OAUTH_TOKEN_URL, headers=headers, data=data, timeout=10)
-        
-        if response.status_code == 200:
-            token_data = response.json()
-            access_token = token_data.get('access_token')
-            print(f"✅ OAuth token obtained!")
-            return access_token
-        else:
-            print(f"❌ OAuth error: {response.status_code} - {response.text}")
-            return None
-            
-    except Exception as e:
-        print(f"❌ OAuth exception: {e}")
-        return None
-
-def subscribe_to_chat_events(webhook_url):
-    """Subscribe to chat.message.sent events"""
-    global subscription_status
-    
-    if not access_token:
-        print("❌ No access token - getting one first...")
-        if not get_oauth_token():
-            return False
-    
-    # Try different endpoint URLs and data formats
-    possible_endpoints = [
-        f"{KICK_API_BASE}/public/v1/events/subscriptions",
-        f"{KICK_API_BASE}/v1/events/subscriptions", 
-        f"{KICK_API_BASE}/events/subscriptions",
-        f"{KICK_API_BASE}/api/v1/events/subscriptions"
-    ]
-    
-    possible_data_formats = [
-        {
-            'events': [{'name': 'chat.message.sent', 'version': 1}],
-            'method': 'webhook',
-            'webhook_url': webhook_url
-        },
-        {
-            'events': [{'name': 'chat.message.sent'}],
-            'webhook_url': webhook_url
-        },
-        {
-            'event_types': ['chat.message.sent'],
-            'webhook_url': webhook_url,
-            'method': 'webhook'
-        }
-    ]
-    
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-    }
-    
-    for endpoint_url in possible_endpoints:
-        for subscription_data in possible_data_formats:
-            try:
-                print(f"📡 Trying endpoint: {endpoint_url}")
-                print(f"📡 With data: {json.dumps(subscription_data, indent=2)}")
-                
-                response = requests.post(
-                    endpoint_url,
-                    headers=headers,
-                    json=subscription_data,
-                    timeout=10
-                )
-                
-                print(f"📡 Response: {response.status_code}")
-                print(f"📡 Body: {response.text}")
-                
-                if response.status_code in [200, 201]:
-                    subscription_status = f"✅ Subscribed via {endpoint_url}"
-                    print("✅ Successfully subscribed to chat events!")
-                    return True
-                elif response.status_code == 404:
-                    print("   404 - Endpoint not found, trying next...")
-                    continue
-                elif response.status_code == 400:
-                    print("   400 - Bad request, trying different data format...")
-                    continue
-                else:
-                    print(f"   {response.status_code} - Unexpected response")
-                    continue
-                    
-            except Exception as e:
-                print(f"   Exception: {e}")
-                continue
-    
-    subscription_status = "❌ All subscription attempts failed"
-    print("❌ All subscription endpoints and formats failed")
-    return False
-
-def get_channel_chat(channel_name):
-    """Get chat messages directly from channel endpoint"""
-    global all_chat_messages
-    
-    if not access_token:
-        print("❌ No access token for channel chat")
-        return []
-    
-    try:
-        print(f"📡 Getting chat from channel: {channel_name}")
-        
-        headers = {
-            'Authorization': f'Bearer {access_token}',
-            'Accept': 'application/json'
-        }
-        
-        # Try different possible chat endpoints
-        possible_endpoints = [
-            f"{KICK_API_BASE}/api/v1/channels/{channel_name}/chat",
-            f"{KICK_API_BASE}/v1/channels/{channel_name}/chat",
-            f"{KICK_API_BASE}/public/v1/channels/{channel_name}/chat",
-            f"{KICK_API_BASE}/channels/{channel_name}/chat",
-            f"{KICK_API_BASE}/api/v1/channels/{channel_name}/messages",
-            f"{KICK_API_BASE}/v1/channels/{channel_name}/messages"
-        ]
-        
-        for endpoint_url in possible_endpoints:
-            try:
-                print(f"📡 Trying chat endpoint: {endpoint_url}")
-                
-                response = requests.get(endpoint_url, headers=headers, timeout=10)
-                
-                print(f"📡 Response: {response.status_code}")
-                
-                if response.status_code == 200:
-                    chat_data = response.json()
-                    print(f"📡 Chat data structure: {json.dumps(chat_data, indent=2)[:300]}...")
-                    
-                    # Try to extract messages from different possible structures
-                    messages = []
-                    if isinstance(chat_data, list):
-                        messages = chat_data
-                    elif 'data' in chat_data:
-                        messages = chat_data['data'] if isinstance(chat_data['data'], list) else [chat_data['data']]
-                    elif 'messages' in chat_data:
-                        messages = chat_data['messages']
-                    elif 'chat' in chat_data:
-                        messages = chat_data['chat']
-                    
-                    print(f"📡 Found {len(messages)} messages")
-                    
-                    # Process messages
-                    for msg in messages[-10:]:  # Get last 10 messages
-                        timestamp = datetime.now().strftime("%H:%M:%S")
-                        
-                        # Try different message structures
-                        message_content = msg.get('content', msg.get('message', msg.get('text', str(msg))))
-                        username = msg.get('sender', {}).get('username', 
-                                         msg.get('username', 
-                                         msg.get('user', {}).get('username', 'Unknown')))
-                        
-                        if message_content:
-                            chat_entry = {
-                                'timestamp': timestamp,
-                                'username': username,
-                                'message': message_content,
-                                'channel': channel_name,
-                                'event_type': 'channel_chat',
-                                'source': 'direct_api'
-                            }
-                            
-                            all_chat_messages.append(chat_entry)
-                            
-                            print(f"💬 Message: {username}: {message_content}")
-                            
-                            # Check for beef
-                            check_beef_message(message_content, username)
-                    
-                    # Keep only last 100 messages
-                    if len(all_chat_messages) > 100:
-                        all_chat_messages = all_chat_messages[-100:]
-                    
-                    return messages
-                
-                elif response.status_code == 404:
-                    print("   404 - Endpoint not found")
-                    continue
-                else:
-                    print(f"   {response.status_code} - {response.text[:200]}")
-                    continue
-                    
-            except Exception as e:
-                print(f"   Exception: {e}")
-                continue
-        
-        print("❌ All chat endpoints failed")
-        return []
-        
-    except Exception as e:
-        print(f"❌ Channel chat exception: {e}")
-        return []
-
-def verify_webhook_signature(payload_body, signature_header):
-    """Verify webhook signature from Kick"""
-    if not WEBHOOK_SECRET:
-        return True  # Skip verification if no secret set
-    
-    try:
-        if not signature_header.startswith('sha256='):
-            return False
-        
-        expected_signature = signature_header[7:]
-        calculated_signature = hmac.new(
-            WEBHOOK_SECRET.encode('utf-8'),
-            payload_body.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        
-        return hmac.compare_digest(calculated_signature, expected_signature)
-    except Exception as e:
-        print(f"❌ Signature verification error: {e}")
-        return False
+websocket_client = None
+connection_status = "Disconnected"
 
 def check_beef_message(message_content, username):
     """Check if message contains $beef and update counter"""
@@ -285,6 +47,133 @@ def check_beef_message(message_content, username):
         return True
     
     return False
+
+def on_pusher_message(ws, message):
+    """Handle incoming Pusher WebSocket messages"""
+    global all_chat_messages, connection_status
+    
+    try:
+        # Parse Pusher message
+        data = json.loads(message)
+        
+        # Handle different Pusher event types
+        if data.get('event') == 'pusher:connection_established':
+            connection_data = json.loads(data.get('data', '{}'))
+            connection_status = "✅ Connected to Pusher"
+            print(f"🔌 Connected to Pusher! Socket ID: {connection_data.get('socket_id', 'unknown')}")
+            
+            # Subscribe to the chatroom channel
+            subscribe_msg = {
+                "event": "pusher:subscribe",
+                "data": {
+                    "channel": f"chatrooms.{CHATROOM_ID}.v2"
+                }
+            }
+            ws.send(json.dumps(subscribe_msg))
+            print(f"📡 Subscribing to channel: chatrooms.{CHATROOM_ID}.v2")
+            
+        elif data.get('event') == 'pusher:subscription_succeeded':
+            print(f"✅ Subscribed to channel: {data.get('channel')}")
+            connection_status = f"✅ Subscribed to chatrooms.{CHATROOM_ID}.v2"
+            
+        elif data.get('event') == 'App\\Events\\ChatMessageEvent':
+            # This is a chat message!
+            message_data = json.loads(data.get('data', '{}'))
+            
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            
+            # Extract message info using your provided format
+            message_content = message_data.get('content', '')
+            username = message_data.get('sender', {}).get('username', 'Unknown')
+            user_id = message_data.get('sender', {}).get('id', 0)
+            message_id = message_data.get('id', '')
+            
+            # Store the message
+            chat_entry = {
+                'timestamp': timestamp,
+                'username': username,
+                'message': message_content,
+                'channel': CHANNEL_NAME,
+                'event_type': 'pusher_chat',
+                'message_id': message_id,
+                'user_id': user_id
+            }
+            
+            all_chat_messages.append(chat_entry)
+            
+            # Keep only last 100 messages
+            if len(all_chat_messages) > 100:
+                all_chat_messages.pop(0)
+            
+            print(f"💬 {username}: {message_content}")
+            
+            # Check for beef
+            if check_beef_message(message_content, username):
+                print(f"🥩 Beef count now: {beef_count}")
+        
+        else:
+            # Log other events for debugging
+            print(f"📨 Pusher event: {data.get('event')} on channel {data.get('channel')}")
+            
+    except Exception as e:
+        print(f"❌ Error parsing Pusher message: {e}")
+        print(f"❌ Raw message: {message}")
+
+def on_pusher_error(ws, error):
+    """Handle Pusher WebSocket errors"""
+    global connection_status
+    connection_status = f"❌ Error: {str(error)}"
+    print(f"❌ Pusher WebSocket error: {error}")
+
+def on_pusher_close(ws, close_status_code, close_msg):
+    """Handle Pusher WebSocket close"""
+    global connection_status
+    connection_status = "❌ Disconnected"
+    print(f"🔌 Pusher WebSocket closed: {close_status_code} - {close_msg}")
+
+def on_pusher_open(ws):
+    """Handle Pusher WebSocket open"""
+    global connection_status
+    connection_status = "🔌 Connected, waiting for auth"
+    print("🔌 Pusher WebSocket opened!")
+
+def start_pusher_connection():
+    """Start the Pusher WebSocket connection"""
+    global websocket_client, connection_status
+    
+    try:
+        print(f"🔌 Connecting to Pusher: {PUSHER_WS_URL}")
+        
+        websocket.enableTrace(False)  # Set to True for debugging
+        
+        websocket_client = websocket.WebSocketApp(
+            PUSHER_WS_URL,
+            header={
+                'Origin': 'https://kick.com',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            on_message=on_pusher_message,
+            on_error=on_pusher_error,
+            on_close=on_pusher_close,
+            on_open=on_pusher_open
+        )
+        
+        # Run WebSocket in a separate thread
+        def run_websocket():
+            websocket_client.run_forever()
+        
+        ws_thread = threading.Thread(target=run_websocket, daemon=True)
+        ws_thread.start()
+        
+        connection_status = "🔌 Connecting..."
+        print("🔌 Pusher WebSocket connection started in background")
+        return True
+        
+    except Exception as e:
+        connection_status = f"❌ Failed to start: {str(e)}"
+        print(f"❌ Failed to start Pusher connection: {e}")
+        return False
+
 
 @app.route('/')
 def dashboard():
@@ -309,24 +198,20 @@ def dashboard():
         <div class="container">
             <h1>🥩 Kick Chat Monitor</h1>
             <div class="status">
-                <strong>Channel:</strong> {CHANNEL_NAME}<br>
-                <strong>Webhook URL:</strong> {request.url_root}webhook<br>
+                <strong>Channel:</strong> {CHANNEL_NAME} (Chatroom ID: {CHATROOM_ID})<br>
+                <strong>Pusher Connection:</strong> {connection_status}<br>
                 <strong>Total Messages:</strong> {len(all_chat_messages)}<br>
-                <strong>OAuth Token:</strong> {"✅ Active" if access_token else "❌ Missing"}<br>
-                <strong>Event Subscription:</strong> {subscription_status}<br>
+                <strong>WebSocket URL:</strong> ws-{PUSHER_CLUSTER}.pusher.com/app/{PUSHER_APP_KEY}<br>
                 <strong>Status:</strong> {"🟢 Online" if request.url_root else "🔴 Offline"}
             </div>
             
             <div class="status">
-                <h3>🔧 Setup Actions</h3>
-                <button onclick="getToken()" style="background: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 3px; cursor: pointer; margin: 5px;">
-                    🔐 Get OAuth Token
+                <h3>🔌 Pusher Controls</h3>
+                <button onclick="connectPusher()" style="background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 3px; cursor: pointer; margin: 5px;">
+                    🔌 Connect to Chat
                 </button>
-                <button onclick="subscribeEvents()" style="background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 3px; cursor: pointer; margin: 5px;">
-                    📡 Subscribe to Chat Events
-                </button>
-                <button onclick="getChannelChat()" style="background: #ffc107; color: black; border: none; padding: 8px 15px; border-radius: 3px; cursor: pointer; margin: 5px;">
-                    💬 Get Channel Chat
+                <button onclick="disconnectPusher()" style="background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 3px; cursor: pointer; margin: 5px;">
+                    🔌 Disconnect
                 </button>
                 <div id="setup-status" style="margin-top: 10px; padding: 10px; border-radius: 3px; background: #333; display: none;"></div>
             </div>
@@ -349,11 +234,11 @@ def dashboard():
             </div>
             
             <div class="status" style="margin-top: 20px; font-size: 12px;">
-                <strong>Instructions:</strong><br>
-                1. Click "🔐 Get OAuth Token" first<br>
-                2. Click "📡 Subscribe to Chat Events"<br>
-                3. Go to kick.com/sam and type messages<br>
-                4. Messages should appear here automatically!
+                <strong>🚀 Instructions:</strong><br>
+                1. Click "🔌 Connect to Chat" to start monitoring<br>
+                2. Go to kick.com/sam and type messages<br>
+                3. Messages will appear here in real-time!<br>
+                4. Type messages starting with "$" containing "beef" to test detection
             </div>
         </div>
         
@@ -366,47 +251,28 @@ def dashboard():
                 setTimeout(() => {{ statusDiv.style.display = 'none'; }}, 5000);
             }}
             
-            function getToken() {{
-                showStatus('Getting OAuth token...', true);
-                fetch('/get-token', {{method: 'POST'}})
+            function connectPusher() {{
+                showStatus('Connecting to Pusher WebSocket...', true);
+                fetch('/connect-pusher', {{method: 'POST'}})
                     .then(response => response.json())
                     .then(data => {{
                         if (data.success) {{
-                            showStatus('✅ OAuth token obtained!', true);
+                            showStatus('✅ Connected to Kick chat!', true);
                             setTimeout(() => location.reload(), 2000);
                         }} else {{
-                            showStatus('❌ Failed to get OAuth token', false);
+                            showStatus('❌ Failed to connect: ' + data.error, false);
                         }}
                     }})
                     .catch(err => showStatus('❌ Error: ' + err.message, false));
             }}
             
-            function subscribeEvents() {{
-                showStatus('Subscribing to chat events...', true);
-                fetch('/subscribe-events', {{method: 'POST'}})
+            function disconnectPusher() {{
+                showStatus('Disconnecting from Pusher...', true);
+                fetch('/disconnect-pusher', {{method: 'POST'}})
                     .then(response => response.json())
                     .then(data => {{
-                        if (data.success) {{
-                            showStatus('✅ Subscribed to chat events!', true);
-                            setTimeout(() => location.reload(), 2000);
-                        }} else {{
-                            showStatus('❌ Subscription failed: ' + data.error, false);
-                        }}
-                    }})
-                    .catch(err => showStatus('❌ Error: ' + err.message, false));
-            }}
-            
-            function getChannelChat() {{
-                showStatus('Getting channel chat...', true);
-                fetch('/get-channel-chat', {{method: 'POST'}})
-                    .then(response => response.json())
-                    .then(data => {{
-                        if (data.success) {{
-                            showStatus(`✅ Got ${{data.message_count}} chat messages!`, true);
-                            setTimeout(() => location.reload(), 2000);
-                        }} else {{
-                            showStatus('❌ Failed to get chat: ' + data.error, false);
-                        }}
+                        showStatus('✅ Disconnected', true);
+                        setTimeout(() => location.reload(), 1000);
                     }})
                     .catch(err => showStatus('❌ Error: ' + err.message, false));
             }}
@@ -415,121 +281,36 @@ def dashboard():
     </html>
     '''
 
-@app.route('/webhook', methods=['POST'])
-def webhook_handler():
-    """Handle incoming webhooks from Kick"""
-    global all_chat_messages
-    
-    try:
-        print(f"🔗 Webhook received from {request.remote_addr}")
-        
-        # Get raw payload
-        raw_payload = request.get_data(as_text=True)
-        print(f"📦 Payload: {raw_payload[:300]}...")
-        
-        # Parse JSON payload
-        payload = request.get_json()
-        
-        if not payload:
-            print("❌ No JSON payload")
-            return jsonify({'error': 'No payload'}), 400
-        
-        print(f"📋 Payload structure: {json.dumps(payload, indent=2)[:500]}...")
-        
-        # Extract message information (try multiple structures)
-        message_content = None
-        username = None
-        channel = None
-        event_type = 'unknown'
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        
-        # Try different payload formats
-        if 'event' in payload and 'data' in payload['event']:
-            data = payload['event']['data']
-            event_type = payload.get('event', {}).get('type', 'unknown')
-            message_content = data.get('content', data.get('message', ''))
-            username = data.get('sender', {}).get('username', data.get('username', 'Unknown'))
-            channel = data.get('chatroom', {}).get('channel', {}).get('slug', data.get('channel', 'unknown'))
-        elif 'data' in payload:
-            data = payload['data']
-            event_type = payload.get('type', 'unknown')
-            message_content = data.get('content', data.get('message', ''))
-            username = data.get('username', data.get('user', {}).get('username', 'Unknown'))
-            channel = data.get('channel', 'unknown')
-        elif 'message' in payload:
-            message_content = payload['message']
-            username = payload.get('username', payload.get('user', 'Unknown'))
-            channel = payload.get('channel', 'unknown')
-            event_type = payload.get('type', payload.get('event_type', 'message'))
-        else:
-            # Store any webhook for debugging
-            message_content = json.dumps(payload)[:200]
-            username = 'WEBHOOK_DEBUG'
-            channel = 'system'
-            event_type = 'debug'
-        
-        # Store message
-        if message_content:
-            chat_entry = {
-                'timestamp': timestamp,
-                'username': username,
-                'message': message_content,
-                'channel': channel,
-                'event_type': event_type
-            }
-            
-            all_chat_messages.append(chat_entry)
-            
-            # Keep only last 100 messages
-            if len(all_chat_messages) > 100:
-                all_chat_messages.pop(0)
-            
-            print(f"💬 Message captured:")
-            print(f"   Channel: {channel}")
-            print(f"   User: {username}")
-            print(f"   Content: {message_content}")
-            print(f"   Event: {event_type}")
-            
-            # Check for beef
-            if check_beef_message(message_content, username):
-                print(f"🥩 Beef count now: {beef_count}")
-        
-        return jsonify({'status': 'success', 'received': True}), 200
-    
-    except Exception as e:
-        print(f"❌ Webhook error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/get-token', methods=['POST'])
-def get_token_route():
-    """API endpoint to get OAuth token"""
-    token = get_oauth_token()
-    return jsonify({
-        'success': token is not None,
-        'message': 'OAuth token obtained' if token else 'Failed to get token'
-    })
-
-@app.route('/subscribe-events', methods=['POST'])
-def subscribe_events_route():
-    """API endpoint to subscribe to chat events"""
-    webhook_url = request.url_root + 'webhook'
-    success = subscribe_to_chat_events(webhook_url)
+@app.route('/connect-pusher', methods=['POST'])
+def connect_pusher_route():
+    """API endpoint to start Pusher WebSocket connection"""
+    success = start_pusher_connection()
     return jsonify({
         'success': success,
-        'error': subscription_status if not success else None,
-        'webhook_url': webhook_url
+        'status': connection_status,
+        'error': connection_status if not success else None
     })
 
-@app.route('/get-channel-chat', methods=['POST'])
-def get_channel_chat_route():
-    """API endpoint to get chat messages directly from channel"""
-    messages = get_channel_chat(CHANNEL_NAME)
-    return jsonify({
-        'success': len(messages) > 0,
-        'message_count': len(messages),
-        'error': 'No messages found' if len(messages) == 0 else None,
-        'channel': CHANNEL_NAME
-    })
+@app.route('/disconnect-pusher', methods=['POST'])
+def disconnect_pusher_route():
+    """API endpoint to disconnect Pusher WebSocket"""
+    global websocket_client, connection_status
+    
+    try:
+        if websocket_client:
+            websocket_client.close()
+            websocket_client = None
+        
+        connection_status = "❌ Disconnected"
+        return jsonify({
+            'success': True,
+            'status': connection_status
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
 
 @app.route('/reset', methods=['POST'])
 def reset_count():
@@ -552,8 +333,9 @@ def health():
 
 if __name__ == '__main__':
     print("🥩 Starting Kick Chat Monitor...")
-    print(f"Channel: {CHANNEL_NAME}")
-    print(f"Client ID: {CLIENT_ID}")
+    print(f"Channel: {CHANNEL_NAME} (Chatroom ID: {CHATROOM_ID})")
+    print(f"Pusher App Key: {PUSHER_APP_KEY}")
+    print(f"WebSocket URL: {PUSHER_WS_URL}")
     
     # Get port from environment (for deployment platforms)
     port = int(os.environ.get('PORT', 5000))
