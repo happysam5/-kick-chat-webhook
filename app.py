@@ -151,7 +151,7 @@ def dashboard():
     <html>
     <head>
         <title>Kick Chat Monitor - Channel: {CHANNEL_NAME}</title>
-        <meta http-equiv="refresh" content="5">
+        <meta http-equiv="refresh" content="2">
         <style>
             body {{ font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: white; }}
             .container {{ max-width: 900px; margin: 0 auto; }}
@@ -241,19 +241,58 @@ def dashboard():
                     .catch(err => showStatus('❌ Error: ' + err.message, false));
             }}
             
-            // Auto-scroll to bottom when page loads and refreshes
+            let lastMessageCount = {len(all_chat_messages)};
+            
+            function updateMessages() {{
+                fetch(`/api/messages?last_count=${{lastMessageCount}}`)
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.messages && data.messages.length > 0) {{
+                            const chatMessages = document.getElementById('chat-messages');
+                            
+                            // Add new messages
+                            data.messages.forEach(msg => {{
+                                const messageDiv = document.createElement('div');
+                                messageDiv.className = 'message';
+                                messageDiv.innerHTML = `<strong>${{msg.timestamp}}</strong> - <span style="color: #00aa00;">${{msg.username}}</span>: ${{msg.message}}`;
+                                chatMessages.appendChild(messageDiv);
+                            }});
+                            
+                            lastMessageCount = data.total_count;
+                            scrollToBottom();
+                            
+                            // Update message count in header
+                            const header = document.querySelector('h3');
+                            if (header) {{
+                                header.textContent = `💬 Real-Time Chat Messages (${{data.total_count}} total):`;
+                            }}
+                        }}
+                        
+                        // Update connection status
+                        const statusElements = document.querySelectorAll('.status');
+                        if (statusElements[0] && data.connection_status) {{
+                            const lines = statusElements[0].innerHTML.split('<br>');
+                            lines[1] = `<strong>Pusher Connection:</strong> ${{data.connection_status}}`;
+                            lines[2] = `<strong>Total Messages:</strong> ${{data.total_count}}`;
+                            statusElements[0].innerHTML = lines.join('<br>');
+                        }}
+                    }})
+                    .catch(error => console.error('Error fetching messages:', error));
+            }}
+            
+            function scrollToBottom() {{
+                const chatMessages = document.getElementById('chat-messages');
+                if (chatMessages) {{
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }}
+            }}
+            
+            // Auto-scroll to bottom when page loads and start real-time updates
             window.addEventListener('load', function() {{
                 scrollToBottom();
                 
-                // Auto-scroll every time the page refreshes
-                const observer = new MutationObserver(function() {{
-                    scrollToBottom();
-                }});
-                
-                const chatMessages = document.getElementById('chat-messages');
-                if (chatMessages) {{
-                    observer.observe(chatMessages, {{ childList: true, subtree: true }});
-                }}
+                // Poll for new messages every 500ms (0.5 seconds)
+                setInterval(updateMessages, 500);
             }});
         </script>
     </body>
@@ -298,6 +337,26 @@ def clear_messages():
     all_chat_messages = []
     print("🗑️ Chat messages cleared")
     return jsonify({'status': 'cleared', 'message_count': len(all_chat_messages)})
+
+@app.route('/api/messages')
+def get_messages():
+    """API endpoint to get latest chat messages"""
+    last_count = request.args.get('last_count', 0, type=int)
+    
+    # Return only new messages since last check
+    if last_count < len(all_chat_messages):
+        new_messages = all_chat_messages[last_count:]
+        return jsonify({
+            'messages': new_messages,
+            'total_count': len(all_chat_messages),
+            'connection_status': connection_status
+        })
+    else:
+        return jsonify({
+            'messages': [],
+            'total_count': len(all_chat_messages),
+            'connection_status': connection_status
+        })
 
 @app.route('/health')
 def health():
