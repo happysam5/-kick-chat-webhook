@@ -159,7 +159,7 @@ def dashboard():
             .log {{ background: #222; padding: 10px; border-radius: 5px; max-height: 600px; overflow-y: auto; margin: 10px 0; }}
             .message {{ background: #4a2c17; margin: 5px 0; padding: 8px; border-radius: 3px; border-left: 3px solid #D2691E; }}
             #chat-messages {{ max-height: 550px; overflow-y: auto; }}
-            .message:last-child {{ animation: fadeIn 0.3s ease; }}
+            .message.new-message {{ animation: fadeIn 0.3s ease; }}
             @keyframes fadeIn {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
         </style>
     </head>
@@ -253,9 +253,14 @@ def dashboard():
                             // Add new messages
                             data.messages.forEach(msg => {{
                                 const messageDiv = document.createElement('div');
-                                messageDiv.className = 'message';
+                                messageDiv.className = 'message new-message';
                                 messageDiv.innerHTML = `<strong>${{msg.timestamp}}</strong> - <span style="color: #00aa00;">${{msg.username}}</span>: ${{msg.message}}`;
                                 chatMessages.appendChild(messageDiv);
+                                
+                                // Remove animation class after animation completes
+                                setTimeout(() => {{
+                                    messageDiv.classList.remove('new-message');
+                                }}, 300);
                             }});
                             
                             lastMessageCount = data.total_count;
