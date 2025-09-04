@@ -74,48 +74,176 @@ def subscribe_to_chat_events(webhook_url):
         if not get_oauth_token():
             return False
     
+    # Try different endpoint URLs and data formats
+    possible_endpoints = [
+        f"{KICK_API_BASE}/public/v1/events/subscriptions",
+        f"{KICK_API_BASE}/v1/events/subscriptions", 
+        f"{KICK_API_BASE}/events/subscriptions",
+        f"{KICK_API_BASE}/api/v1/events/subscriptions"
+    ]
+    
+    possible_data_formats = [
+        {
+            'events': [{'name': 'chat.message.sent', 'version': 1}],
+            'method': 'webhook',
+            'webhook_url': webhook_url
+        },
+        {
+            'events': [{'name': 'chat.message.sent'}],
+            'webhook_url': webhook_url
+        },
+        {
+            'event_types': ['chat.message.sent'],
+            'webhook_url': webhook_url,
+            'method': 'webhook'
+        }
+    ]
+    
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    }
+    
+    for endpoint_url in possible_endpoints:
+        for subscription_data in possible_data_formats:
+            try:
+                print(f"📡 Trying endpoint: {endpoint_url}")
+                print(f"📡 With data: {json.dumps(subscription_data, indent=2)}")
+                
+                response = requests.post(
+                    endpoint_url,
+                    headers=headers,
+                    json=subscription_data,
+                    timeout=10
+                )
+                
+                print(f"📡 Response: {response.status_code}")
+                print(f"📡 Body: {response.text}")
+                
+                if response.status_code in [200, 201]:
+                    subscription_status = f"✅ Subscribed via {endpoint_url}"
+                    print("✅ Successfully subscribed to chat events!")
+                    return True
+                elif response.status_code == 404:
+                    print("   404 - Endpoint not found, trying next...")
+                    continue
+                elif response.status_code == 400:
+                    print("   400 - Bad request, trying different data format...")
+                    continue
+                else:
+                    print(f"   {response.status_code} - Unexpected response")
+                    continue
+                    
+            except Exception as e:
+                print(f"   Exception: {e}")
+                continue
+    
+    subscription_status = "❌ All subscription attempts failed"
+    print("❌ All subscription endpoints and formats failed")
+    return False
+
+def get_channel_chat(channel_name):
+    """Get chat messages directly from channel endpoint"""
+    global all_chat_messages
+    
+    if not access_token:
+        print("❌ No access token for channel chat")
+        return []
+    
     try:
-        print("📡 Subscribing to chat events...")
+        print(f"📡 Getting chat from channel: {channel_name}")
         
         headers = {
             'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'application/json',
             'Accept': 'application/json'
         }
         
-        # Subscribe to chat.message.sent events
-        subscription_data = {
-            'events': [
-                {
-                    'name': 'chat.message.sent',
-                    'webhook_url': webhook_url
-                }
-            ]
-        }
+        # Try different possible chat endpoints
+        possible_endpoints = [
+            f"{KICK_API_BASE}/api/v1/channels/{channel_name}/chat",
+            f"{KICK_API_BASE}/v1/channels/{channel_name}/chat",
+            f"{KICK_API_BASE}/public/v1/channels/{channel_name}/chat",
+            f"{KICK_API_BASE}/channels/{channel_name}/chat",
+            f"{KICK_API_BASE}/api/v1/channels/{channel_name}/messages",
+            f"{KICK_API_BASE}/v1/channels/{channel_name}/messages"
+        ]
         
-        response = requests.post(
-            f"{KICK_API_BASE}/v1/events/subscribe",
-            headers=headers,
-            json=subscription_data,
-            timeout=10
-        )
+        for endpoint_url in possible_endpoints:
+            try:
+                print(f"📡 Trying chat endpoint: {endpoint_url}")
+                
+                response = requests.get(endpoint_url, headers=headers, timeout=10)
+                
+                print(f"📡 Response: {response.status_code}")
+                
+                if response.status_code == 200:
+                    chat_data = response.json()
+                    print(f"📡 Chat data structure: {json.dumps(chat_data, indent=2)[:300]}...")
+                    
+                    # Try to extract messages from different possible structures
+                    messages = []
+                    if isinstance(chat_data, list):
+                        messages = chat_data
+                    elif 'data' in chat_data:
+                        messages = chat_data['data'] if isinstance(chat_data['data'], list) else [chat_data['data']]
+                    elif 'messages' in chat_data:
+                        messages = chat_data['messages']
+                    elif 'chat' in chat_data:
+                        messages = chat_data['chat']
+                    
+                    print(f"📡 Found {len(messages)} messages")
+                    
+                    # Process messages
+                    for msg in messages[-10:]:  # Get last 10 messages
+                        timestamp = datetime.now().strftime("%H:%M:%S")
+                        
+                        # Try different message structures
+                        message_content = msg.get('content', msg.get('message', msg.get('text', str(msg))))
+                        username = msg.get('sender', {}).get('username', 
+                                         msg.get('username', 
+                                         msg.get('user', {}).get('username', 'Unknown')))
+                        
+                        if message_content:
+                            chat_entry = {
+                                'timestamp': timestamp,
+                                'username': username,
+                                'message': message_content,
+                                'channel': channel_name,
+                                'event_type': 'channel_chat',
+                                'source': 'direct_api'
+                            }
+                            
+                            all_chat_messages.append(chat_entry)
+                            
+                            print(f"💬 Message: {username}: {message_content}")
+                            
+                            # Check for beef
+                            check_beef_message(message_content, username)
+                    
+                    # Keep only last 100 messages
+                    if len(all_chat_messages) > 100:
+                        all_chat_messages = all_chat_messages[-100:]
+                    
+                    return messages
+                
+                elif response.status_code == 404:
+                    print("   404 - Endpoint not found")
+                    continue
+                else:
+                    print(f"   {response.status_code} - {response.text[:200]}")
+                    continue
+                    
+            except Exception as e:
+                print(f"   Exception: {e}")
+                continue
         
-        print(f"📡 Subscription response: {response.status_code}")
-        print(f"📡 Response body: {response.text}")
+        print("❌ All chat endpoints failed")
+        return []
         
-        if response.status_code in [200, 201]:
-            subscription_status = "✅ Subscribed to chat events"
-            print("✅ Successfully subscribed to chat.message.sent events!")
-            return True
-        else:
-            subscription_status = f"❌ Subscription failed: {response.status_code}"
-            print(f"❌ Subscription error: {response.status_code} - {response.text}")
-            return False
-            
     except Exception as e:
-        subscription_status = f"❌ Exception: {str(e)}"
-        print(f"❌ Subscription exception: {e}")
-        return False
+        print(f"❌ Channel chat exception: {e}")
+        return []
 
 def verify_webhook_signature(payload_body, signature_header):
     """Verify webhook signature from Kick"""
@@ -197,6 +325,9 @@ def dashboard():
                 <button onclick="subscribeEvents()" style="background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 3px; cursor: pointer; margin: 5px;">
                     📡 Subscribe to Chat Events
                 </button>
+                <button onclick="getChannelChat()" style="background: #ffc107; color: black; border: none; padding: 8px 15px; border-radius: 3px; cursor: pointer; margin: 5px;">
+                    💬 Get Channel Chat
+                </button>
                 <div id="setup-status" style="margin-top: 10px; padding: 10px; border-radius: 3px; background: #333; display: none;"></div>
             </div>
             
@@ -260,6 +391,21 @@ def dashboard():
                             setTimeout(() => location.reload(), 2000);
                         }} else {{
                             showStatus('❌ Subscription failed: ' + data.error, false);
+                        }}
+                    }})
+                    .catch(err => showStatus('❌ Error: ' + err.message, false));
+            }}
+            
+            function getChannelChat() {{
+                showStatus('Getting channel chat...', true);
+                fetch('/get-channel-chat', {{method: 'POST'}})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            showStatus(`✅ Got ${{data.message_count}} chat messages!`, true);
+                            setTimeout(() => location.reload(), 2000);
+                        }} else {{
+                            showStatus('❌ Failed to get chat: ' + data.error, false);
                         }}
                     }})
                     .catch(err => showStatus('❌ Error: ' + err.message, false));
@@ -372,6 +518,17 @@ def subscribe_events_route():
         'success': success,
         'error': subscription_status if not success else None,
         'webhook_url': webhook_url
+    })
+
+@app.route('/get-channel-chat', methods=['POST'])
+def get_channel_chat_route():
+    """API endpoint to get chat messages directly from channel"""
+    messages = get_channel_chat(CHANNEL_NAME)
+    return jsonify({
+        'success': len(messages) > 0,
+        'message_count': len(messages),
+        'error': 'No messages found' if len(messages) == 0 else None,
+        'channel': CHANNEL_NAME
     })
 
 @app.route('/reset', methods=['POST'])
