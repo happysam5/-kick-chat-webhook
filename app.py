@@ -141,6 +141,10 @@ def check_beef_tts(message_content, username):
         # Extract the username from the confirmation
         confirmed_username = message_content.split(' ')[0][1:]  # Remove @ symbol
         
+        print(f"🔍 TTS CONFIRMATION DETECTED: {message_content}")
+        print(f"   Extracted username: '{confirmed_username}'")
+        print(f"   Pending beef users: {list(pending_beef_messages.keys())}")
+        
         # Check if this user recently said "beef"
         if confirmed_username in pending_beef_messages:
             beef_count += 1
@@ -222,7 +226,9 @@ def on_pusher_message(ws, message):
             print(f"💬 {username}: {message_content}")
             
             # Check for beef TTS logic
-            check_beef_tts(message_content, username)
+            beef_detected = check_beef_tts(message_content, username)
+            if beef_detected:
+                print(f"✅ Beef TTS confirmed for {username}")
         
         else:
             # Log other events for debugging
