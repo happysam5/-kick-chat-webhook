@@ -115,13 +115,14 @@ def check_cooldown_reset():
             print(f"🕐 10-minute cooldown reached. Resetting beef counter from {beef_count} to 0")
             beef_count = 0
             last_beef_tts_time = None
+            # Don't clear pending_beef_messages - let them still be tracked for TTS confirmations
 
 def check_beef_tts(message_content, username):
     """Check for beef detection and TTS confirmation logic"""
     global beef_count, pending_beef_messages, last_beef_tts_time
     
     # Check cooldown reset before processing new messages
-    check_cooldown_reset()
+    # check_cooldown_reset()  # Temporarily disabled to debug beef tracking
     
     # Step 1: Check if message contains "beef" or variations using advanced detection
     if detect_beef_variations(message_content):
@@ -140,10 +141,6 @@ def check_beef_tts(message_content, username):
     if message_content.startswith('@') and 'Your message has been queued for TTS.' in message_content:
         # Extract the username from the confirmation
         confirmed_username = message_content.split(' ')[0][1:]  # Remove @ symbol
-        
-        print(f"🔍 TTS CONFIRMATION DETECTED: {message_content}")
-        print(f"   Extracted username: '{confirmed_username}'")
-        print(f"   Pending beef users: {list(pending_beef_messages.keys())}")
         
         # Check if this user recently said "beef"
         if confirmed_username in pending_beef_messages:
@@ -226,9 +223,7 @@ def on_pusher_message(ws, message):
             print(f"💬 {username}: {message_content}")
             
             # Check for beef TTS logic
-            beef_detected = check_beef_tts(message_content, username)
-            if beef_detected:
-                print(f"✅ Beef TTS confirmed for {username}")
+            check_beef_tts(message_content, username)
         
         else:
             # Log other events for debugging
@@ -502,8 +497,7 @@ def beef_status():
     """API endpoint for OBS overlay to get beef counter status"""
     global beef_count, pending_beef_messages, last_beef_tts_time
     
-    # Check cooldown reset before returning status
-    check_cooldown_reset()
+    # check_cooldown_reset()  # Temporarily disabled to debug beef tracking
     
     # Calculate time remaining until reset (if applicable)
     time_until_reset = None
