@@ -529,7 +529,7 @@ def overlay():
     <script>
         const CONFIG = {{
             // Your actual Railway URL
-            apiUrl: "{request.host_url}api/beef-status",
+            apiUrl: "https://web-production-e9ae0.up.railway.app/api/beef-status",
             pollMs: 2000    // Check every 2 seconds
         }};
 
